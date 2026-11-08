@@ -1,8 +1,8 @@
 """
-Unified SDLC Platform — Backend
-Python + Flask + SQLite + Qwen Code CLI
+WorkPulse Backend — All 11 Base44 Entities + Auth + AI Pipeline
+Replaces Base44 cloud with local SQLite. Drop-in compatible API.
 """
-import json, os, sqlite3, subprocess, time
+import hashlib, json, os, sqlite3, subprocess, time, uuid
 from pathlib import Path
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
@@ -11,201 +11,173 @@ app = Flask(__name__, static_folder='../frontend/dist', static_url_path='')
 CORS(app)
 
 DB_PATH = Path(os.environ.get('WORKPULSE_DB', Path(__file__).parent / 'workpulse.db'))
-LOG_PATH = Path(os.environ.get('WORKPULSE_LOG', Path(__file__).parent / 'factory.log'))
-REPO_PATH = os.environ.get('FACTORY_REPO', os.getcwd())
-AGENT_TIMEOUT = int(os.environ.get('AGENT_TIMEOUT', '3600'))
-PIPELINE_ROLES = ['architect', 'reviewer', 'backend', 'frontend', 'database', 'tests', 'qa']
-
 _NODE = Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'nodejs'
-_NPM = Path(os.environ.get('APPDATA', '')) / 'npm'
-if _NODE.exists(): os.environ['PATH'] = str(_NODE) + os.pathsep + str(_NPM) + os.pathsep + os.environ.get('PATH', '')
+if _NODE.exists(): os.environ['PATH'] = str(_NODE) + os.pathsep + os.environ.get('PATH', '')
 os.environ.setdefault('QWEN_CODE_SUPPRESS_YOLO_WARNING', '1')
 
+def uid(): return str(uuid.uuid4().hex)[:24]
 def get_db():
-    db = sqlite3.connect(str(DB_PATH))
-    db.row_factory = sqlite3.Row
-    db.execute('PRAGMA journal_mode=WAL')
-    db.execute('PRAGMA foreign_keys=ON')
+    db = sqlite3.connect(str(DB_PATH)); db.row_factory = sqlite3.Row
+    db.execute('PRAGMA journal_mode=WAL'); db.execute('PRAGMA foreign_keys=ON')
     return db
 
 def init_db():
     db = get_db()
-    db.executescript("""
-        CREATE TABLE IF NOT EXISTS projects (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE,
-            description TEXT, project_type TEXT NOT NULL DEFAULT 'internal', client_name TEXT,
-            repo_url TEXT, tech_stack TEXT, status TEXT NOT NULL DEFAULT 'active',
-            created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        CREATE TABLE IF NOT EXISTS work_items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER REFERENCES projects(id),
-            title TEXT NOT NULL, description TEXT NOT NULL, work_type TEXT NOT NULL DEFAULT 'feature',
-            status TEXT NOT NULL DEFAULT 'intake', priority TEXT NOT NULL DEFAULT 'medium',
-            assigned_to TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now')), completed_at TEXT
-        );
-        CREATE TABLE IF NOT EXISTS pipeline_phases (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, work_item_id INTEGER NOT NULL REFERENCES work_items(id),
-            phase_order INTEGER NOT NULL, role TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued',
-            started_at TEXT, completed_at TEXT, duration_s REAL, agent_used TEXT,
-            tokens_in INTEGER DEFAULT 0, tokens_out INTEGER DEFAULT 0, error_log TEXT,
-            UNIQUE(work_item_id, role)
-        );
-        CREATE TABLE IF NOT EXISTS agent_runs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, phase_id INTEGER REFERENCES pipeline_phases(id),
-            attempt INTEGER NOT NULL DEFAULT 1, agent_cmd TEXT, stdout_summary TEXT,
-            stderr_summary TEXT, exit_code INTEGER, duration_s REAL,
-            tokens_in INTEGER DEFAULT 0, tokens_out INTEGER DEFAULT 0,
-            started_at TEXT NOT NULL DEFAULT (datetime('now')), finished_at TEXT
-        );
-        CREATE TABLE IF NOT EXISTS comments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, work_item_id INTEGER NOT NULL REFERENCES work_items(id),
-            phase_id INTEGER REFERENCES pipeline_phases(id), author TEXT NOT NULL DEFAULT 'system',
-            comment_type TEXT NOT NULL DEFAULT 'note', content TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        CREATE INDEX IF NOT EXISTS idx_wi_project ON work_items(project_id);
-        CREATE INDEX IF NOT EXISTS idx_ph_wi ON pipeline_phases(work_item_id);
-    """)
+    db.executescript("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, full_name TEXT, password_hash TEXT, role TEXT DEFAULT 'user', is_approved INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, default_theme TEXT DEFAULT 'dark', created_date TEXT DEFAULT (datetime('now')), updated_date TEXT DEFAULT (datetime('now'))); CREATE TABLE IF NOT EXISTS auth_tokens (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, token TEXT NOT NULL UNIQUE, created_date TEXT DEFAULT (datetime('now'))); CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, project_type TEXT DEFAULT 'internal', client_name TEXT, description TEXT, github_repo_url TEXT, created_date TEXT DEFAULT (datetime('now')), updated_date TEXT DEFAULT (datetime('now'))); CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, title TEXT NOT NULL, brief TEXT, expected_output TEXT, assigned_to TEXT DEFAULT '[]', project_id TEXT, task_type TEXT DEFAULT 'internal', status TEXT DEFAULT 'floating', blocker TEXT, priority_order INTEGER DEFAULT 0, due_date TEXT, is_important INTEGER DEFAULT 0, is_urgent INTEGER DEFAULT 0, github_repo_url TEXT, created_date TEXT DEFAULT (datetime('now')), updated_date TEXT DEFAULT (datetime('now'))); CREATE TABLE IF NOT EXISTS team_members (id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT, member_status TEXT DEFAULT 'offline', check_in_status TEXT DEFAULT 'checked_out_manual', device_type TEXT, mobile_number TEXT, points_balance INTEGER DEFAULT 1000, show_in_team INTEGER DEFAULT 1, created_date TEXT DEFAULT (datetime('now')), updated_date TEXT DEFAULT (datetime('now'))); CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, started_by TEXT NOT NULL, started_by_name TEXT, started_at TEXT DEFAULT (datetime('now')), ended_at TEXT, state_when_started TEXT, state_when_ended TEXT, actual_output TEXT, had_blocker INTEGER DEFAULT 0, blocker_description TEXT, is_active INTEGER DEFAULT 1, created_date TEXT DEFAULT (datetime('now'))); CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, text TEXT NOT NULL, sent_by TEXT, sent_by_name TEXT, message_type TEXT DEFAULT 'comment', is_pinned INTEGER DEFAULT 0, created_date TEXT DEFAULT (datetime('now'))); CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, notification_type TEXT NOT NULL, target_member_id TEXT, task_id TEXT, task_title TEXT, from_member_name TEXT, message TEXT, is_read INTEGER DEFAULT 0, created_date TEXT DEFAULT (datetime('now'))); CREATE TABLE IF NOT EXISTS points_ledger (id TEXT PRIMARY KEY, member_id TEXT NOT NULL, event_type TEXT NOT NULL, points_change INTEGER NOT NULL, reason TEXT, category TEXT DEFAULT 'adjustment', balance_after INTEGER, created_date TEXT DEFAULT (datetime('now'))); CREATE TABLE IF NOT EXISTS org_settings (id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE, value TEXT, label TEXT, created_date TEXT DEFAULT (datetime('now'))); CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);")
     db.commit()
     return db
 
-PHASE_PROMPTS = {
-    'architect': lambda d: f"ARCHITECT. Create SPEC.md at repo root using write_file. Feature: {d}. Sections: API Contract, DB Schema, File Assignments per role, Shared Types, Acceptance Criteria. Partition so no two agents touch same file. After SPEC.md exists, done.",
-    'reviewer': lambda d: f"REVIEWER. Read SPEC.md. Critique the plan. Find gaps, edge cases, security concerns. Write REVIEW.md with APPROVED or REVISION_NEEDED. Do NOT edit code.",
-    'backend': lambda d: f"BACKEND dev. Read SPEC.md. Build ALL backend files assigned. API routes, middleware, auth, error handling. Run build+tests+lint. Do NOT touch frontend or DB files.",
-    'frontend': lambda d: f"FRONTEND dev. Read SPEC.md and existing implementation. Build ALL frontend files assigned. Connect to backend API. Handle loading, empty, error states. Run build+tests+lint.",
-    'database': lambda d: f"DATABASE dev. Read SPEC.md and existing implementation. Build ALL database files assigned. Models, migrations, seed data. Schema must match SPEC.md. Run build+tests+lint.",
-    'tests': lambda d: f"TESTS dev. Read SPEC.md and ALL implementation. Write tests covering acceptance criteria. Run all tests. Do NOT edit implementation.",
-    'qa': lambda d: f"QA agent. Read SPEC.md and ALL implementation. Do NOT edit code. Check: API matches contract, DB matches, frontend connects, tests cover criteria, no security issues. Report PASS or FAIL with file:line.",
-}
+def _auth(req):
+    token = req.headers.get('Authorization','').replace('Bearer ','')
+    if not token: return None
+    row = get_db().execute("SELECT u.* FROM auth_tokens t JOIN users u ON t.user_id=u.id WHERE t.token=?", (token,)).fetchone()
+    return dict(row) if row else None
 
-# ── API Routes ──
+@app.route('/api/auth/register', methods=['POST'])
+def register():
+    d = request.json; db = get_db()
+    if db.execute("SELECT id FROM users WHERE email=?", (d['email'],)).fetchone(): return jsonify({'error': 'Email exists'}), 400
+    pw = hashlib.sha256(d['password'].encode()).hexdigest(); id = uid()
+    db.execute("INSERT INTO users (id,email,full_name,password_hash,role,is_approved) VALUES (?,?,?,?,?,1)", (id, d['email'], d.get('full_name',''), pw, d.get('role','user')))
+    db.commit(); return jsonify({'id': id, 'email': d['email']})
 
-@app.route('/api/heartbeat')
-def heartbeat():
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    d = request.json; db = get_db()
+    pw = hashlib.sha256(d['password'].encode()).hexdigest()
+    user = db.execute("SELECT * FROM users WHERE email=? AND password_hash=?", (d['email'], pw)).fetchone()
+    if not user: return jsonify({'error': 'Invalid credentials'}), 401
+    token = hashlib.sha256(f"{user['id']}{time.time()}".encode()).hexdigest()
+    db.execute("INSERT INTO auth_tokens (id,user_id,token) VALUES (?,?,?)", (uid(), user['id'], token))
+    db.commit(); return jsonify({'access_token': token, 'user': {k: user[k] for k in ['id','email','full_name','role','is_approved']}})
+
+@app.route('/api/auth/me')
+def me():
+    u = _auth(request); return jsonify(u) if u else (jsonify({'error': 'Unauthorized'}), 401)
+
+@app.route('/api/tasks', methods=['GET','POST'])
+def tasks():
     db = get_db()
-    phases = {r['status']: r['c'] for r in db.execute("SELECT status, count(*) as c FROM pipeline_phases GROUP BY status").fetchall()}
-    items = {r['status']: r['c'] for r in db.execute("SELECT status, count(*) as c FROM work_items GROUP BY status").fetchall()}
-    return jsonify({'status': 'ok', 'phases': phases, 'work_items': items})
+    if request.method == 'POST':
+        d = request.json; id = uid()
+        db.execute("INSERT INTO tasks (id,title,brief,expected_output,assigned_to,project_id,task_type,status,priority_order,due_date,github_repo_url) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (id, d['title'], d.get('brief',''), d.get('expected_output',''), json.dumps(d.get('assigned_to',[])), d.get('project_id'), d.get('task_type','internal'), d.get('status','floating'), d.get('priority_order',0), d.get('due_date'), d.get('github_repo_url','')))
+        db.execute("INSERT INTO messages (id,task_id,text,sent_by_name,message_type) VALUES (?,?,?,?,?)", (uid(), id, f"Task created: {d['title']}", 'System', 'system_log'))
+        db.commit(); return jsonify({'id': id})
+    sql = "SELECT * FROM tasks WHERE 1=1"; params = []
+    for f in ['status','project_id','task_type']:
+        if request.args.get(f): sql += f" AND {f}=?"; params.append(request.args[f])
+    if request.args.get('search'): sql += " AND (title LIKE ? OR brief LIKE ?)"; params.extend([f"%{request.args['search']}%"]*2)
+    sql += " ORDER BY priority_order ASC, created_date DESC LIMIT 50"
+    rows = [dict(r) for r in db.execute(sql, params).fetchall()]
+    for r in rows:
+        try: r['assigned_to'] = json.loads(r['assigned_to'])
+        except: r['assigned_to'] = []
+    return jsonify(rows)
 
-@app.route('/api/projects', methods=['GET', 'POST'])
+@app.route('/api/tasks/<id>', methods=['GET','PATCH'])
+def task_detail(id):
+    db = get_db()
+    task = db.execute("SELECT * FROM tasks WHERE id=?", (id,)).fetchone()
+    if not task: return jsonify({'error': 'Not found'}), 404
+    if request.method == 'GET':
+        d = dict(task)
+        try: d['assigned_to'] = json.loads(d['assigned_to'])
+        except: d['assigned_to'] = []
+        d['messages'] = [dict(r) for r in db.execute("SELECT * FROM messages WHERE task_id=? ORDER BY created_date DESC LIMIT 50", (id,)).fetchall()]
+        d['sessions'] = [dict(r) for r in db.execute("SELECT * FROM sessions WHERE task_id=? ORDER BY started_at DESC LIMIT 20", (id,)).fetchall()]
+        return jsonify(d)
+    d = request.json; sets = []; params = []
+    for k in ['title','brief','status','priority_order','expected_output','blocker','due_date','assigned_to']:
+        if k in d: sets.append(f"{k}=?"); params.append(json.dumps(d[k]) if isinstance(d[k],list) else d[k])
+    if sets: params.append(id); db.execute(f"UPDATE tasks SET {', '.join(sets)}, updated_date=datetime('now') WHERE id=?", params); db.commit()
+    return jsonify({'updated': True})
+
+@app.route('/api/projects', methods=['GET','POST'])
 def projects():
-    if request.method == 'POST':
-        d = request.json
-        slug = d.get('slug') or d.get('name', '').lower().replace(' ', '-')
-        db = get_db()
-        db.execute("INSERT INTO projects (name, slug, description, project_type, client_name, repo_url, tech_stack) VALUES (?,?,?,?,?,?,?)",
-                   (d['name'], slug, d.get('description'), d.get('project_type', 'internal'), d.get('client_name'), d.get('repo_url'), d.get('tech_stack')))
-        db.commit(); return jsonify({'created': True})
-    return jsonify([dict(r) for r in get_db().execute("SELECT * FROM projects ORDER BY created_at DESC").fetchall()])
-
-@app.route('/api/work-items', methods=['GET', 'POST'])
-def work_items():
-    if request.method == 'POST':
-        d = request.json
-        db = get_db()
-        cur = db.execute("INSERT INTO work_items (project_id, title, description, work_type, priority, assigned_to) VALUES (?,?,?,?,?,?)",
-                         (d.get('project_id'), d['title'], d.get('description', ''), d.get('work_type', 'feature'), d.get('priority', 'medium'), d.get('assigned_to')))
-        wi_id = cur.lastrowid
-        for i, role in enumerate(PIPELINE_ROLES):
-            db.execute("INSERT INTO pipeline_phases (work_item_id, phase_order, role, status) VALUES (?,?,?,?)",
-                       (wi_id, i, role, 'queued' if i == 0 else 'blocked'))
-        db.execute("INSERT INTO comments (work_item_id, author, comment_type, content) VALUES (?, 'system', 'system_log', ?)",
-                   (wi_id, f"Created. Type: {d.get('work_type', 'feature')}. Pipeline: {' → '.join(PIPELINE_ROLES)}"))
-        db.commit(); return jsonify({'id': wi_id, 'phases': len(PIPELINE_ROLES)})
-
     db = get_db()
-    sql = "SELECT wi.*, p.name as project_name FROM work_items wi LEFT JOIN projects p ON wi.project_id = p.id WHERE 1=1"
-    params = []
-    for k in ['project_id', 'work_type', 'status']:
-        if request.args.get(k) and request.args.get(k) != 'all':
-            sql += f" AND wi.{k} = ?"; params.append(request.args[k])
-    sql += " ORDER BY wi.created_at DESC LIMIT 50"
+    if request.method == 'POST':
+        d = request.json; id = uid()
+        db.execute("INSERT INTO projects (id,name,project_type,client_name,description,github_repo_url) VALUES (?,?,?,?,?,?)", (id, d['name'], d.get('project_type','internal'), d.get('client_name',''), d.get('description',''), d.get('github_repo_url','')))
+        db.commit(); return jsonify({'id': id})
+    return jsonify([dict(r) for r in db.execute("SELECT * FROM projects ORDER BY created_date DESC").fetchall()])
+
+@app.route('/api/team', methods=['GET','POST'])
+def team():
+    db = get_db()
+    if request.method == 'POST':
+        d = request.json; id = uid()
+        db.execute("INSERT INTO team_members (id,name,role,member_status) VALUES (?,?,?,?)", (id, d['name'], d.get('role',''), d.get('member_status','offline')))
+        db.commit(); return jsonify({'id': id})
+    return jsonify([dict(r) for r in db.execute("SELECT * FROM team_members ORDER BY name").fetchall()])
+
+@app.route('/api/messages', methods=['POST'])
+def messages():
+    d = request.json; db = get_db(); id = uid()
+    db.execute("INSERT INTO messages (id,task_id,text,sent_by,sent_by_name,message_type) VALUES (?,?,?,?,?,?)", (id, d['task_id'], d['text'], d.get('sent_by',''), d.get('sent_by_name',''), d.get('message_type','comment')))
+    db.commit(); return jsonify({'id': id})
+
+@app.route('/api/sessions', methods=['POST'])
+def sessions():
+    d = request.json; db = get_db(); id = uid()
+    db.execute("INSERT INTO sessions (id,task_id,started_by,started_by_name,state_when_started,is_active) VALUES (?,?,?,?,?,1)", (id, d['task_id'], d['started_by'], d.get('started_by_name',''), d.get('state_when_started','')))
+    db.commit(); return jsonify({'id': id})
+
+@app.route('/api/notifications', methods=['GET'])
+def notifications():
+    db = get_db()
+    member_id = request.args.get('member_id')
+    sql = "SELECT * FROM notifications WHERE 1=1"; params = []
+    if member_id: sql += " AND target_member_id=?"; params.append(member_id)
     return jsonify([dict(r) for r in db.execute(sql, params).fetchall()])
 
-@app.route('/api/work-items/<int:wi_id>')
-def work_item_detail(wi_id):
+@app.route('/api/settings', methods=['GET','POST'])
+def settings():
     db = get_db()
-    wi = db.execute("SELECT wi.*, p.name as project_name FROM work_items wi LEFT JOIN projects p ON wi.project_id = p.id WHERE wi.id = ?", (wi_id,)).fetchone()
-    if not wi: return jsonify({'error': 'not found'}), 404
-    result = dict(wi)
-    result['phases'] = [dict(r) for r in db.execute("SELECT * FROM pipeline_phases WHERE work_item_id = ? ORDER BY phase_order", (wi_id,)).fetchall()]
-    result['comments'] = [dict(r) for r in db.execute("SELECT * FROM comments WHERE work_item_id = ? ORDER BY created_at DESC LIMIT 20", (wi_id,)).fetchall()]
-    return jsonify(result)
+    if request.method == 'POST':
+        d = request.json
+        db.execute("INSERT OR REPLACE INTO org_settings (id,key,value,label) VALUES (?,?,?,?)", (uid(), d['key'], d['value'], d.get('label','')))
+        db.commit(); return jsonify({'saved': True})
+    return jsonify([dict(r) for r in db.execute("SELECT * FROM org_settings").fetchall()])
 
-@app.route('/api/pipeline/<int:phase_id>/run', methods=['POST'])
-def run_phase(phase_id):
+PIPELINE_ROLES = ['architect','reviewer','backend','frontend','database','tests','qa']
+
+@app.route('/api/pipeline/run/<task_id>/<role>', methods=['POST'])
+def run_pipeline(task_id, role):
+    if role not in PIPELINE_ROLES: return jsonify({'error': 'Unknown role'}), 400
     db = get_db()
-    phase = db.execute("SELECT * FROM pipeline_phases WHERE id = ?", (phase_id,)).fetchone()
-    if not phase: return jsonify({'error': 'Phase not found'}), 404
-    if phase['status'] not in ('queued', 'retrying'): return jsonify({'error': f"Phase is {phase['status']}"}), 400
-
-    wi = db.execute("SELECT * FROM work_items WHERE id = ?", (phase['work_item_id'],)).fetchone()
-    db.execute("UPDATE pipeline_phases SET status='in_progress', started_at=datetime('now') WHERE id=?", (phase_id,))
-    db.execute("UPDATE work_items SET status=?, updated_at=datetime('now') WHERE id=?", (phase['role'], phase['work_item_id']))
-    db.commit()
-
+    task = db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if not task: return jsonify({'error': 'Task not found'}), 404
+    prompts = {
+        'architect': f"ARCHITECT. Create SPEC.md using write_file. Task: {task['title']}. {task.get('expected_output','')}",
+        'reviewer': "REVIEWER. Read SPEC.md. Write REVIEW.md.",
+        'backend': "BACKEND. Build API routes per SPEC.md. Run tests.",
+        'frontend': "FRONTEND. Build components per SPEC.md. Run tests.",
+        'database': "DATABASE. Build schema per SPEC.md. Run tests.",
+        'tests': "TESTS. Write tests per SPEC.md. Run all tests.",
+        'qa': "QA. Review against SPEC.md. Report PASS or FAIL.",
+    }
+    repo = task['github_repo_url'] or os.environ.get('FACTORY_REPO', os.getcwd())
     try:
-        prompt = PHASE_PROMPTS[phase['role']](wi['description'])
         start = time.monotonic()
-        result = subprocess.run(['qwen', '-p', prompt, '--output-format', 'json', '--yolo', '--auth-type', 'openai'],
-                                cwd=REPO_PATH, capture_output=True, text=True, timeout=AGENT_TIMEOUT + 300)
-        duration = time.monotonic() - start
-
-        stdout = (result.stdout or '')[-8000:]
-        stderr = (result.stderr or '')[-4000:]
-        tokens_in = tokens_out = 0
-        for line in (result.stdout or '').split('\n'):
-            try:
-                obj = json.loads(line.strip())
-                if 'usage' in obj:
-                    tokens_in += obj['usage'].get('input_tokens', 0)
-                    tokens_out += obj['usage'].get('output_tokens', 0)
+        r = subprocess.run(['qwen','-p',prompts[role],'--output-format','json','--yolo','--auth-type','openai'], cwd=repo, capture_output=True, text=True, timeout=3600)
+        dur = round(time.monotonic()-start, 1)
+        tokens = 0
+        for l in (r.stdout or '').split('\n'):
+            try: tokens += json.loads(l.strip()).get('usage',{}).get('total_tokens',0)
             except: pass
-
-        db.execute("INSERT INTO agent_runs (phase_id, attempt, agent_cmd, stdout_summary, stderr_summary, exit_code, duration_s, tokens_in, tokens_out, finished_at) VALUES (?,1,'qwen',?,?,?,?,?,?,datetime('now'))",
-                   (phase_id, stdout, stderr, result.returncode, round(duration, 1), tokens_in, tokens_out))
-
-        if result.returncode == 0:
-            db.execute("UPDATE pipeline_phases SET status='completed', completed_at=datetime('now'), duration_s=?, agent_used='qwen', tokens_in=?, tokens_out=? WHERE id=?",
-                       (round(duration, 1), tokens_in, tokens_out, phase_id))
-            # Unblock next phase
-            next_phase = db.execute("SELECT id FROM pipeline_phases WHERE work_item_id=? AND phase_order=? AND status='blocked'",
-                                    (phase['work_item_id'], phase['phase_order'] + 1)).fetchone()
-            if next_phase:
-                db.execute("UPDATE pipeline_phases SET status='queued' WHERE id=?", (next_phase['id'],))
-            else:
-                db.execute("UPDATE work_items SET status='done', completed_at=datetime('now'), updated_at=datetime('now') WHERE id=?", (phase['work_item_id'],))
-
-            db.execute("INSERT INTO comments (work_item_id, phase_id, author, comment_type, content) VALUES (?,?,'system','system_log',?)",
-                       (phase['work_item_id'], phase_id, f"{phase['role']} completed ({round(duration)}s, {tokens_in}+{tokens_out} tokens)"))
-            db.commit()
-            return jsonify({'success': True, 'role': phase['role'], 'duration': round(duration), 'tokens_in': tokens_in, 'tokens_out': tokens_out})
-        else:
-            db.execute("UPDATE pipeline_phases SET status='failed', error_log=? WHERE id=?", (stderr[:2000], phase_id))
-            db.commit()
-            return jsonify({'error': stderr[:500]}), 500
-    except Exception as e:
-        db.execute("INSERT INTO agent_runs (phase_id, agent_cmd, stderr_summary, exit_code, duration_s, finished_at) VALUES (?,'qwen',?,1,0,datetime('now'))",
-                   (phase_id, str(e)[:4000]))
-        db.execute("UPDATE pipeline_phases SET status='failed', error_log=? WHERE id=?", (str(e)[:2000], phase_id))
+        db.execute("INSERT INTO messages (id,task_id,text,sent_by_name,message_type) VALUES (?,?,?,?,?)", (uid(), task_id, f"[{role}] done in {dur}s ({tokens} tokens)", 'AI Factory', 'system_log'))
         db.commit()
-        return jsonify({'error': str(e)[:500]}), 500
-
-@app.route('/api/runs')
-def runs():
-    return jsonify([dict(r) for r in get_db().execute("SELECT * FROM agent_runs ORDER BY id DESC LIMIT 50").fetchall()])
+        return jsonify({'success': True, 'role': role, 'duration': dur, 'tokens': tokens})
+    except Exception as e:
+        return jsonify({'error': str(e)[:500]})
 
 @app.route('/')
-def serve_frontend():
-    return send_from_directory(app.static_folder, 'index.html')
-
+def index(): return send_from_directory(app.static_folder, 'index.html')
 @app.errorhandler(404)
-def fallback(e):
-    return send_from_directory(app.static_folder, 'index.html')
+def fallback(e): return send_from_directory(app.static_folder, 'index.html')
 
 if __name__ == '__main__':
     init_db()
-    print(f"\n  SDLC Platform: http://localhost:8080\n")
+    print("\n  WorkPulse Backend: http://localhost:8080\n")
     app.run(host='0.0.0.0', port=8080, debug=False)
