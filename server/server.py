@@ -11,6 +11,7 @@ app = Flask(__name__, static_folder='../frontend/dist', static_url_path='')
 CORS(app)
 
 DB_PATH = Path(os.environ.get('WORKPULSE_DB', Path(__file__).parent / 'workpulse.db'))
+LOG_PATH = Path(os.environ.get('WORKPULSE_LOG', Path(__file__).parent / 'factory.log'))
 REPO_PATH = os.environ.get('FACTORY_REPO', os.getcwd())
 AGENT_TIMEOUT = int(os.environ.get('AGENT_TIMEOUT', '3600'))
 PIPELINE_ROLES = ['architect', 'reviewer', 'backend', 'frontend', 'database', 'tests', 'qa']
