@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+
+.phase-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.phase-dot.completed { background: #22c55e; }
+.phase-dot.in_progress { background: #f59e0b; animation: pulse 1.5s infinite; }
+.phase-dot.queued, .phase-dot.blocked { background: #374151; }
+.phase-dot.failed { background: #ef4444; }
+
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+.pipeline-line { width: 2px; height: 20px; margin: 0 auto; }
+.pipeline-line.completed { background: #22c55e; }
+.pipeline-line.in_progress { background: #f59e0b; }
+.pipeline-line.queued, .pipeline-line.blocked { background: #374151; }
