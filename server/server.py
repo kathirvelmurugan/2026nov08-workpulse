@@ -1,6 +1,8 @@
 """
-WorkPulse Backend — All 11 Base44 Entities + Auth + AI Pipeline
-Replaces Base44 cloud with local SQLite. Drop-in compatible API.
+WorkPulse Backend — All 11 Base44 Entities + Auth + AI Pipeline + SDLC Best Practices
+Closed gaps: research templates, bug triage, exploratory QA, retrospectives,
+technical debt tracking, sprints, DoD, incident response.
+User Guide: See USER_GUIDE.md
 """
 import hashlib, json, os, sqlite3, subprocess, time, uuid
 from pathlib import Path

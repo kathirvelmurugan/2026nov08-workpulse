@@ -1,18 +1,47 @@
 @import "tailwindcss";
 
-body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+:root {
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #111118;
+  --bg-card: #181825;
+  --bg-card-hover: #1e1e2e;
+  --border: #252535;
+  --border-light: #313148;
+  --text-primary: #e4e4f0;
+  --text-secondary: #9898b8;
+  --text-muted: #6b6b88;
+  --accent: #6366f1;
+  --accent-light: #818cf8;
+  --accent-glow: rgba(99,102,241,0.15);
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+}
 
-.phase-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-.phase-dot.completed { background: #22c55e; }
-.phase-dot.in_progress { background: #f59e0b; animation: pulse 1.5s infinite; }
-.phase-dot.queued, .phase-dot.blocked { background: #374151; }
-.phase-dot.failed { background: #ef4444; }
+body { margin:0; font-family:system-ui,-apple-system,sans-serif; background:var(--bg-primary); color:var(--text-primary); -webkit-font-smoothing:antialiased; }
+::-webkit-scrollbar { width:5px; } ::-webkit-scrollbar-thumb { background:var(--border-light); border-radius:3px; }
 
-@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-
-.pipeline-line { width: 2px; height: 20px; margin: 0 auto; }
-.pipeline-line.completed { background: #22c55e; }
-.pipeline-line.in_progress { background: #f59e0b; }
-.pipeline-line.queued, .pipeline-line.blocked { background: #374151; }
+.glass { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; }
+.glass:hover { border-color:var(--border-light); background:var(--bg-card-hover); }
+.input { background:var(--bg-secondary); border:1px solid var(--border); color:var(--text-primary); padding:8px 12px; border-radius:6px; font-size:13px; width:100%; font-family:inherit; }
+.input:focus { outline:none; border-color:var(--accent); }
+.btn { padding:8px 16px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; border:none; transition:all .15s; }
+.btn-primary { background:var(--accent); color:#fff; } .btn-primary:hover { background:var(--accent-light); }
+.btn-ghost { background:transparent; color:var(--text-secondary); border:1px solid var(--border); } .btn-ghost:hover { border-color:var(--accent); color:var(--accent-light); }
+.btn-sm { padding:4px 10px; font-size:11px; }
+.nav-item { display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;color:var(--text-secondary);font-size:13px;cursor:pointer;border:none;background:none;width:100%;text-align:left;transition:all .15s; }
+.nav-item:hover { background:var(--bg-card);color:var(--text-primary); }
+.nav-item.active { background:var(--accent-glow);color:var(--accent-light); }
+.badge { padding:3px 8px;border-radius:12px;font-size:10px;font-weight:600;text-transform:uppercase; }
+.badge-floating { background:rgba(99,102,241,.12);color:#818cf8; }
+.badge-active,.badge-in_progress { background:rgba(245,158,11,.12);color:#fbbf24; }
+.badge-merged,.badge-done { background:rgba(34,197,94,.12);color:#4ade80; }
+.badge-parked,.badge-failed { background:rgba(239,68,68,.12);color:#f87171; }
+.badge-blocked { background:rgba(107,114,128,.12);color:#9ca3af; }
+.empty-state { text-align:center;padding:40px;color:var(--text-muted); }
+.toast { position:fixed;bottom:20px;right:20px;background:var(--bg-card);border:1px solid var(--border);padding:12px 20px;border-radius:8px;font-size:13px;z-index:9999;animation:slideUp .3s; }
+@keyframes slideUp { from{transform:translateY(16px);opacity:0} to{transform:translateY(0);opacity:1} }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+.lc-toggle { display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);cursor:pointer;font-size:11px;color:var(--text-secondary);transition:all .2s; }
+.lc-toggle.on { border-color:var(--accent);background:var(--accent-glow);color:var(--accent-light); }
+.lc-dot { width:7px;height:7px;border-radius:50%;background:var(--border-light); } .lc-toggle.on .lc-dot { background:var(--accent); }

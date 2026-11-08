@@ -5,16 +5,16 @@ export default function Dashboard({ onSelect }) {
   const [projects, setProjects] = useState([])
 
   useEffect(() => {
-    fetch('/api/work-items').then(r => r.json()).then(setItems)
+    fetch('/api/tasks').then(r => r.json()).then(setItems)
     fetch('/api/projects').then(r => r.json()).then(setProjects)
-    const t = setInterval(() => fetch('/api/work-items').then(r => r.json()).then(setItems), 10000)
+    const t = setInterval(() => fetch('/api/tasks').then(r => r.json()).then(setItems), 10000)
     return () => clearInterval(t)
   }, [])
 
-  const active = items.filter(i => !['done', 'intake'].includes(i.status)).length
-  const done = items.filter(i => i.status === 'done').length
-  const features = items.filter(i => i.work_type === 'feature').length
-  const bugs = items.filter(i => i.work_type === 'bug').length
+  const active = items.filter(i => i.status === 'active' || i.status === 'in_progress').length
+  const done = items.filter(i => i.status === 'done' || i.status === 'merged').length
+  const features = items.filter(i => i.task_type === 'feature').length
+  const bugs = items.filter(i => i.task_type === 'bug').length
 
   return (
     <div>
