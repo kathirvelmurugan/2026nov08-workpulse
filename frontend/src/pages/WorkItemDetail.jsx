@@ -9,8 +9,8 @@ export default function WorkItemDetail({ item, onBack }) {
   const [data, setData] = useState(null)
 
   useEffect(() => {
-    fetch(`/api/work-items/${item.id}`).then(r => r.json()).then(setData)
-    const t = setInterval(() => fetch(`/api/work-items/${item.id}`).then(r => r.json()).then(setData), 8000)
+    fetch(`/api/tasks/${item.id}`).then(r => r.json()).then(setData)
+    const t = setInterval(() => fetch(`/api/tasks/${item.id}`).then(r => r.json()).then(setData), 8000)
     return () => clearInterval(t)
   }, [item.id])
 
